@@ -1,0 +1,141 @@
+<html>
+  <head>
+    <title>Simple Map</title>
+    <meta name="viewport" content="initial-scale=1.0">
+    <meta charset="utf-8">
+    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 100%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+
+    var map, geocoder, infowindow, otherwindow;
+    var myLatLngs=[{lat: 24.1207469, lng: 120.6753644}, {lat: 24.1204052, lng: 120.6745722}];
+
+    var retry = 100;
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function putMarkers(location, index){
+        for (let try_count = 0; try_count < 5; try_count++) {
+            try {
+                await geocoder
+                    .geocode({address: location.address})
+                    .then( (result) => {
+                        let marker = new google.maps.Marker({
+                            position: result.results[0].geometry.location.toJSON(),
+                            map: map,
+                            title: location.address,
+                        });
+                        infowindow = new google.maps.InfoWindow();
+                        google.maps.event.addListener(marker, "click", () => {
+                            addChartWindow(marker, location.address);
+                        });
+                    });
+                break;
+            } catch (error) {
+                if (error.code === google.maps.GeocoderStatus.OVER_QUERY_LIMIT) {
+                    retry += 100;
+                    console.log("retry later", index);
+                    await delay(retry);
+                } else if(error.code === google.maps.GeocoderStatus.ZERO_RESULTS){
+                    console.log("Zero result: ", location.address);
+                    break;
+                } else{
+                    console.error(error.message);
+                    break;
+                }
+            }
+        }
+    }
+    async function addChartWindow(marker, name){
+        await fetch(`/light/${name}`)
+            .then(function(response){
+                return response.json();
+            })
+            .then(function(myJson){
+                // console.log(myJson);
+                let chart = createHighChart(myJson);
+
+                if (otherwindow === undefined) {
+                    infowindow.setContent(chart);
+                    infowindow.open(map, marker);
+                    otherwindow = infowindow;
+                } else {
+                    otherwindow.close();
+                    infowindow.setContent(chart);
+                    infowindow.open(map, marker);
+                    otherwindow = infowindow;
+                }
+            });
+    }
+
+    function createHighChart(data){
+        var value = [],
+            time = [];
+        for (i = 0; i < data.result.length; i++) {
+            value.push({ y: parseInt(data.result[i].value) });
+            time.push(data.result[i].time);
+        }
+
+        let chart = document.createElement("div");
+        Highcharts.chart(chart, {
+            title: { text: "光度變化", x: -20 },
+            subtitle: { text: data.result[0].address, x: -20},
+            xAxis: {
+                title:{ text: "Time"},
+                categories: time,
+                scrollbar: {
+                    enabled: true,
+                },
+                labels: {
+                    enable: true,
+                }
+            },
+            yAxis: { title: { text: "Value"} },
+            series: [{ name: "Light", data: value }],
+        });
+        return chart;
+    }
+
+    function initMap() {
+        // Init map
+        map = new google.maps.Map(document.getElementById("map"), {
+            center: {lat: 24.1207469, lng: 120.6753644},
+            zoom: 16,
+        });
+        
+        geocoder = new google.maps.Geocoder();
+        fetch("/getLocation")
+            .then((res) => {
+                return res.json();
+            })
+            .then((locations) =>{
+                // console.log(locations);
+                locations.result.forEach(putMarkers);
+            })
+    }
+      
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKsnDQDWjmTXblnO72YEF-8Sqo8UtGg7U&callback=initMap"
+    async defer
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/highcharts/9.1.2/highcharts.min.js"
+      integrity="sha512-hmCOv5qiXVpYpzh8Rmt4ThoG14p+oCx9jWnDH5OsFO1rUHGR/h9YD/hWDjd3/fGK86QAgQqT5FALVzFQ1AsdJQ=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+  </body>
+</html>
